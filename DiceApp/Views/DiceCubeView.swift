@@ -72,6 +72,10 @@ struct DiceCubeView: UIViewRepresentable {
             dieNode = SCNNode(geometry: box)
 
             scene = SCNScene()
+            // Transparent view backgrounds have been version-flaky with
+            // backgroundColor alone; clearing the scene background too is
+            // the reliable combination.
+            scene.background.contents = UIColor.clear
             scene.rootNode.addChildNode(dieNode)
 
             let camera = SCNCamera()
@@ -143,25 +147,40 @@ struct DiceCubeView: UIViewRepresentable {
             }
         }
 
+        /// Face texture. The UV square of each SCNBox side spans the full
+        /// face footprint INCLUDING the chamfer band, so the outer
+        /// `chamferRatio` fraction of the texture bends around the rounded
+        /// edge. Background color runs full-bleed (safe either way);
+        /// border and pips stay inside the flat zone with slack. Verified
+        /// visually via the CI UI-test screenshots.
         private static func faceImage(face: Int, palette: CandyPopTheme.Palette) -> UIImage {
             let side: CGFloat = 512
             let size = CGSize(width: side, height: side)
+            let flatInset = side * CandyPopTheme.chamferRatio // bevel band width
             return UIGraphicsImageRenderer(size: size).image { context in
                 palette.dieFace.setFill()
                 context.fill(CGRect(origin: .zero, size: size))
 
+                // Border ring at the flat zone's edge: from the front it
+                // reads as the face's border, with the bevel adding the
+                // rounding outside it.
                 palette.dieBorder.setStroke()
-                let inset: CGFloat = 30
+                let borderInset = flatInset + 11
                 let border = UIBezierPath(
-                    roundedRect: CGRect(x: inset, y: inset, width: side - 2 * inset, height: side - 2 * inset),
-                    cornerRadius: 88
+                    roundedRect: CGRect(
+                        x: borderInset,
+                        y: borderInset,
+                        width: side - 2 * borderInset,
+                        height: side - 2 * borderInset
+                    ),
+                    cornerRadius: 48
                 )
                 border.lineWidth = 6
                 border.stroke()
 
                 palette.pips.setFill()
-                let pipDiameter = side * 0.165
-                let offset = side * 0.26
+                let pipDiameter = side * 0.15
+                let offset = side * 0.24
                 for (dx, dy) in pipLayout[face] ?? [] {
                     let center = CGPoint(x: side / 2 + dx * offset, y: side / 2 + dy * offset)
                     UIBezierPath(ovalIn: CGRect(

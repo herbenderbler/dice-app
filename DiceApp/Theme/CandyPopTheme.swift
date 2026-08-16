@@ -49,8 +49,11 @@ enum CandyPopTheme {
     static let rollDuration: Duration = .milliseconds(1050)
 
     /// Chamfer as a fraction of the unit cube edge — the rounded-edge
-    /// radius that makes the die read as a toy rather than a box.
-    static let chamferRatio: CGFloat = 0.16
+    /// radius that makes the die read as a toy rather than a box. The
+    /// outer `chamferRatio` band of each face texture renders on the
+    /// bevel, so face art must stay inside the remaining flat zone (see
+    /// DiceCubeView.faceImage).
+    static let chamferRatio: CGFloat = 0.12
 }
 
 extension Color {
