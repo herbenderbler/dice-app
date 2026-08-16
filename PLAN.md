@@ -12,9 +12,10 @@ feel instant and satisfying.
 - **Swift + SwiftUI**, no third-party runtime dependencies.
 - **Minimum iOS 17** — allows `@Observable`, `sensoryFeedback`, and modern
   animation APIs. (Drop to iOS 16 only if older-device support is needed.)
-- **Xcode 16 on macOS** to build and run. Note: this remote (Linux) session
-  can author all source and project configuration, but cannot compile or run
-  iOS apps — build verification happens in Xcode/Simulator on a Mac.
+- **Xcode 16 on macOS** to build and run — but no *local* Mac is required:
+  GitHub Actions macOS runners do all compiling and testing (see §6a). A Mac
+  is only needed to interactively run the Simulator or sideload a device
+  build.
 - Portrait-first but works in both orientations; supports light and dark mode.
 
 ## 3. Randomness & entropy
@@ -112,6 +113,28 @@ dice-app/
     ├── DieTests.swift
     └── SeededGenerator.swift
 ```
+
+## 6a. CI: building without a Mac
+
+GitHub Actions provides macOS runners with Xcode preinstalled, so the whole
+build/test loop runs in CI (`.github/workflows/ci.yml`):
+
+1. Check out → `brew install xcodegen` → `xcodegen generate`.
+2. `xcodebuild test` against an iPhone Simulator, unsigned
+   (`CODE_SIGNING_ALLOWED=NO`) — simulator builds need no Apple Developer
+   account, certificates, or provisioning.
+3. On failure the `.xcresult` bundle is uploaded as an artifact.
+
+Cost note: macOS runner minutes are free for public repositories; on
+private repositories they bill against included minutes at a 10× multiplier.
+
+What CI *cannot* do is put the app on a device or let you interact with it.
+The CI-only path for that is TestFlight: an Apple Developer Program
+membership ($99/yr) plus an App Store Connect API key stored in repo
+secrets lets a second workflow archive, sign, and upload builds entirely
+from CI (fastlane or raw `xcodebuild archive` + upload). Then the app
+installs on-device via the TestFlight app — still no Mac involved. That
+workflow is deliberately deferred until wanted.
 
 ## 7. Testing
 
