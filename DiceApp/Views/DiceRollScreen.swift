@@ -1,39 +1,62 @@
 import Accessibility
 import SwiftUI
 
-/// The app's single screen: a centered die, with the entire screen acting
-/// as the roll button.
+/// The app's single screen: the Candy Pop cube on a warm cream gradient,
+/// with the entire screen acting as the roll button.
 struct DiceRollScreen: View {
     @State private var viewModel = DiceRollViewModel()
+    @State private var haptics = HapticsPlayer()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
-    // Consecutive flicker faces always differ, so keying the angle off the
-    // face value guarantees a visible wobble on every tick of the tumble.
-    private var wobbleAngle: Double {
-        guard viewModel.isRolling, !reduceMotion else { return 0 }
-        return Double(viewModel.displayedFace) * 3 - 10.5
+    private var palette: CandyPopTheme.Palette {
+        CandyPopTheme.palette(for: colorScheme)
     }
 
     var body: some View {
-        VStack(spacing: 48) {
-            DieFaceView(face: viewModel.displayedFace, animateChanges: !reduceMotion)
-                .frame(width: 180, height: 180)
-                .foregroundStyle(.primary)
-                .rotationEffect(.degrees(wobbleAngle))
-                .scaleEffect(viewModel.isRolling && !reduceMotion ? 1.08 : 1)
-                .animation(.spring(duration: 0.25, bounce: 0.5), value: wobbleAngle)
-                .animation(.spring(duration: 0.3, bounce: 0.4), value: viewModel.isRolling)
+        ZStack {
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
 
-            Text("Tap anywhere to roll")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .opacity(viewModel.rollCount == 0 ? 1 : 0)
-                .animation(.easeOut(duration: 0.4), value: viewModel.rollCount == 0)
+            VStack(spacing: 18) {
+                Spacer(minLength: 0)
+
+                DiceCubeView(
+                    face: viewModel.displayedFace,
+                    rollID: viewModel.rollCount,
+                    reduceMotion: reduceMotion,
+                    colorScheme: colorScheme
+                )
+                .aspectRatio(1, contentMode: .fit)
+                .padding(.horizontal, 20)
+
+                // Ground shadow: squashes and fades while the cube is
+                // airborne, recovers on landing.
+                Ellipse()
+                    .fill(palette.shadow)
+                    .frame(height: 26)
+                    .padding(.horizontal, 96)
+                    .blur(radius: 12)
+                    .opacity(viewModel.isRolling && !reduceMotion ? 0.16 : 0.32)
+                    .scaleEffect(viewModel.isRolling && !reduceMotion ? 0.72 : 1)
+                    .animation(.easeOut(duration: 0.3), value: viewModel.isRolling)
+
+                Spacer(minLength: 0)
+
+                Text("Tap anywhere to roll")
+                    .font(.system(.callout, design: .rounded, weight: .medium))
+                    .foregroundStyle(palette.hint)
+                    .opacity(viewModel.rollCount == 0 ? 1 : 0)
+                    .animation(.easeOut(duration: 0.4), value: viewModel.rollCount == 0)
+                    .padding(.bottom, 8)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onTapGesture { roll() }
-        .sensoryFeedback(.impact(weight: .medium), trigger: viewModel.rollCount)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Die")
         .accessibilityValue("Showing \(viewModel.displayedFace)")
@@ -43,6 +66,8 @@ struct DiceRollScreen: View {
     }
 
     private func roll() {
+        guard !viewModel.isRolling else { return }
+        haptics.playRoll(reduceMotion: reduceMotion)
         Task {
             await viewModel.roll()
             AccessibilityNotification.Announcement("Rolled \(viewModel.displayedFace)").post()

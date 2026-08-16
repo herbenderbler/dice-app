@@ -1,10 +1,12 @@
 # Dice
 
 A deliberately minimal iOS dice app: one six-sided die, tap anywhere on the
-screen to roll it. A short tumble animation plays, a haptic tick lands when
-the die settles, and the result is drawn from the system CSPRNG with
-bias-free range reduction (see [PLAN.md](PLAN.md) §3 for the entropy
-details).
+screen to roll it. A 3D chamfered cube (SceneKit, flat pastel "Candy Pop"
+theme — see STYLES.md) tumbles through space and lands on the result with a
+gumball-rattle haptic. The result is drawn from the system CSPRNG with
+bias-free range reduction *before* the animation starts — the tumble is
+pure presentation and never influences the outcome (see [PLAN.md](PLAN.md)
+§3 for the entropy details).
 
 ## Building without a Mac (CI)
 
@@ -48,9 +50,11 @@ DiceApp/
   DiceApp.swift             App entry point
   Models/Die.swift          Fair n-sided die; injectable RNG
   Models/AnyRandomNumberGenerator.swift
-  ViewModels/DiceRollViewModel.swift   Roll state + flicker choreography
-  Views/DiceRollScreen.swift           Full-screen tap target, haptics, a11y
-  Views/DieFaceView.swift              SF Symbol die faces
+  Theme/CandyPopTheme.swift            WCAG-verified palette + roll timings
+  ViewModels/DiceRollViewModel.swift   Roll state; result drawn at roll start
+  Views/DiceRollScreen.swift           Full-screen tap target, gradient, a11y
+  Views/DiceCubeView.swift             SceneKit chamfered cube + tumble
+  Haptics/HapticsPlayer.swift          CoreHaptics gumball rhythm + fallback
 DiceAppTests/
   DieTests.swift            Range, determinism, chi-squared uniformity
   DiceRollViewModelTests.swift
