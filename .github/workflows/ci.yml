@@ -1,0 +1,117 @@
+name: CI
+
+# push covers main only; feature branches get their run via pull_request,
+# so a branch with an open PR is not built twice per commit.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test (iOS Simulator)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Runner images rotate their installed simulators, so pick whatever
+      # iPhone is available instead of hard-coding a model name.
+      - name: Pick a simulator
+        id: sim
+        run: |
+          xcrun simctl list devices available
+          DEVICE=$(xcrun simctl list devices available --json \
+            | jq -r '[.devices[][] | select(.name | startswith("iPhone")) | .name] | first')
+          if [ -z "$DEVICE" ] || [ "$DEVICE" = "null" ]; then
+            echo "No iPhone simulator available on this runner" >&2
+            exit 1
+          fi
+          echo "Using simulator: $DEVICE"
+          echo "device=$DEVICE" >> "$GITHUB_OUTPUT"
+
+      - name: Build and run tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project DiceApp.xcodeproj \
+            -scheme DiceApp \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.device }}" \
+            -derivedDataPath DerivedData \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+
+      # Export XCTAttachment screenshots (the UI test attaches them with
+      # lifetime .keepAlways) and restore their human-readable names: the
+      # manifest's suggestedHumanReadableName carries a _<n>_<UUID> suffix.
+      - name: Export screenshots
+        if: always()
+        run: |
+          if [ -d TestResults.xcresult ]; then
+            mkdir -p Screenshots
+            xcrun xcresulttool export attachments \
+              --path TestResults.xcresult \
+              --output-path Screenshots
+            if [ -f Screenshots/manifest.json ]; then
+              jq -r '.[] | .attachments[] | [.exportedFileName, .suggestedHumanReadableName] | @tsv' \
+                Screenshots/manifest.json |
+              while IFS=$'\t' read -r src dst; do
+                clean=$(printf '%s' "$dst" | sed -E 's/_[0-9]+_[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}//')
+                { [ -f "Screenshots/$src" ] && mv -n "Screenshots/$src" "Screenshots/$clean"; } || true
+              done
+            fi
+            ls -la Screenshots
+          fi
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: Screenshots
+          if-no-files-found: warn
+
+      # upload-artifact@v4 flattens a directory's contents to the artifact
+      # root, which would strip the .xcresult wrapper and leave a bundle
+      # Xcode can't open — so zip it with the wrapper preserved first.
+      - name: Package result bundle on failure
+        if: failure()
+        run: ditto -c -k --keepParent TestResults.xcresult TestResults.xcresult.zip
+
+      - name: Upload result bundle on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults.xcresult.zip
+
+      # The simulator .app (unsigned) that the test step built. Download it
+      # to run the app without building anything: drag onto a Simulator on
+      # any Mac, or upload the inner zip to a browser-based device service
+      # like appetize.io to interact with it from any machine.
+      - name: Package simulator app
+        run: |
+          ditto -c -k --keepParent \
+            DerivedData/Build/Products/Debug-iphonesimulator/DiceApp.app \
+            DiceApp-simulator.zip
+
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiceApp-simulator
+          path: DiceApp-simulator.zip
